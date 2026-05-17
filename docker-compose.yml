@@ -1,0 +1,76 @@
+version: '2.1'
+
+services:
+
+  migration-service:
+    image: nadchel/em-migration-service
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: jdbc:postgresql://db:5432/postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+
+  token-service:
+    image: nadchel/em-token-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      migration-service:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    environment:
+      POSTGRES_URL: jdbc:postgresql://db:5432/postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+
+  user-service:
+    image: nadchel/em-user-service
+    ports:
+      - "8090:8090"
+    depends_on:
+      token-service:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: jdbc:postgresql://db:5432/postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      JWK_SET_URI: http://token-service:8080/oauth2/jwks
+
+  card-service:
+    image: nadchel/em-card-service
+    ports:
+      - "8100:8100"
+    depends_on:
+      token-service:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: jdbc:postgresql://db:5432/postgres
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: postgres
+      JWK_SET_URI: http://token-service:8080/oauth2/jwks
+      APP_ENCRYPTION_PASSWORD: c7e84a2982163b45a90d45763f01b84c8a2b5e6f1a4d8c92b3a4c5f6d7e89b1a
+      APP_ENCRYPTION_SALT: aef9c4b38e52bf95e3ede05d6d067342
+
+  db:
+    image: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
